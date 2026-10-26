@@ -1,4 +1,4 @@
-﻿create extension if not exists "uuid-ossp";
+create extension if not exists "uuid-ossp";
 
 create table public.profiles (
   id uuid references auth.users on delete cascade primary key,

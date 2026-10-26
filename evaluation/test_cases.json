@@ -1,4 +1,4 @@
-﻿[
+[
   { "id": 1, "question": "Write a python script to parse a large CSV file using pandas and handle missing values.", "expected_model": "gpt-4o" },
   { "id": 2, "question": "Translate this short marketing paragraph from English to Turkish.", "expected_model": "gpt-4o-mini" },
   { "id": 3, "question": "Summarize this 50-page financial annual report and highlight key risks.", "expected_model": "claude-3-5-sonnet" },
