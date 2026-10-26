@@ -1,0 +1,108 @@
+﻿{
+  "name": "ModelMatch Router Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "modelmatch-recommend",
+        "responseMode": "responseNode",
+        "options": { "rawBody": false }
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "modelmatch-recommend-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.item.json.body || {};\nconst question = (body.question || '').trim();\nconst userId = body.userId;\nif (!userId) throw new Error('Unauthorized: Missing user ID');\nif (question.length === 0) throw new Error('Question cannot be empty');\nif (question.length > 2000) throw new Error('Question exceeds maximum length of 2000 characters');\nreturn { json: { question, userId } };"
+      },
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.typesafe.ai/v1/systemone",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"input\": {{$json.question}},\n  \"tasks\": [\n    {\n      \"type\": \"Choice\",\n      \"name\": \"category\",\n      \"options\": [\n        \"coding\",\n        \"data analysis\",\n        \"long-document reasoning\",\n        \"writing/editing\",\n        \"translation\",\n        \"quick factual lookup\",\n        \"math\",\n        \"image understanding\",\n        \"other\"\n      ]\n    },\n    {\n      \"type\": \"Score\",\n      \"name\": \"difficulty\",\n      \"min\": 1,\n      \"max\": 5\n    },\n    {\n      \"type\": \"Noul\",\n      \"name\": \"high_stakes_risk\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "name": "TypeSafe Jev Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [690, 300],
+      "notes": "Verify against docs: POST /v1/systemone"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from public.routing_rules where category = $1 and difficulty_min <= $2 and difficulty_max >= $2 limit 1;",
+        "additionalFields": {
+          "queryParams": "={{ $('TypeSafe Jev Request').item.json.category }},={{ $('TypeSafe Jev Request').item.json.difficulty }}"
+        }
+      },
+      "name": "Fetch Routing Rule",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [910, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from public.settings where user_id = $1 limit 1;",
+        "additionalFields": {
+          "queryParams": "={{ $('Validate Input').item.json.userId }}"
+        }
+      },
+      "name": "Fetch User Settings",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [910, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const jevResult = $('TypeSafe Jev Request').item.json;\nconst rule = $('Fetch Routing Rule').item.json || {};\nconst settings = $('Fetch User Settings').item.json || {};\nconst question = $('Validate Input').item.json.question;\nconst userId = $('Validate Input').item.json.userId;\nconst category = jevResult.category?.value || 'other';\nconst difficulty = jevResult.difficulty?.value || 3;\nconst riskObj = jevResult.high_stakes_risk;\nconst isHighRisk = riskObj?.value === true || riskObj?.probability > 0.5;\nconst confidence = jevResult.confidence || 0.8;\nconst threshold = settings.confidence_threshold ?? 0.75;\nconst preference = settings.preference || 'best_quality';\nlet recommendedModel = rule.model || 'gpt-4o';\nlet reason = rule.reason || 'Default routing applied.';\nlet cheaperAlt = rule.cheaper_alternative;\nlet strongerAlt = rule.stronger_alternative;\nif (isHighRisk) {\n  recommendedModel = strongerAlt || 'claude-3-5-sonnet';\n  reason = 'High-stakes risk detected (legal/medical/financial). Routed to strongest model. Please verify with a professional.';\n} else if (confidence < threshold) {\n  recommendedModel = strongerAlt || recommendedModel;\n  reason = `Confidence (${confidence}) is below threshold (${threshold}). Upgraded to stronger model for reliability.`;\n} else if (preference === 'cheaper' && cheaperAlt) {\n  recommendedModel = cheaperAlt;\n  reason = `User preference is set to cheaper. Selected economical alternative: ${cheaperAlt}.`;\n}\nreturn {\n  json: {\n    userId,\n    category,\n    difficulty,\n    risk: isHighRisk ? 'High' : 'Low',\n    recommended_model: recommendedModel,\n    reason,\n    confidence,\n    cheaper_alternative: cheaperAlt,\n    stronger_alternative: strongerAlt,\n    question_text: settings.do_not_store_question ? null : question\n  }\n};"
+      },
+      "name": "Apply Routing Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1130, 400]
+    },
+    {
+      "parameters": {
+        "table": "requests",
+        "columns": "user_id,category,difficulty,risk,chosen_model,confidence,reason,cheaper_alternative,stronger_alternative,question_text"
+      },
+      "name": "Log to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1350, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"category\": \"{{ $('Apply Routing Logic').item.json.category }}\",\n  \"difficulty\": {{ $('Apply Routing Logic').item.json.difficulty }},\n  \"risk\": \"{{ $('Apply Routing Logic').item.json.risk }}\",\n  \"recommended_model\": \"{{ $('Apply Routing Logic').item.json.recommended_model }}\",\n  \"reason\": \"{{ $('Apply Routing Logic').item.json.reason }}\",\n  \"confidence\": {{ $('Apply Routing Logic').item.json.confidence }},\n  \"cheaper_alternative\": \"{{ $('Apply Routing Logic').item.json.cheaper_alternative }}\",\n  \"stronger_alternative\": \"{{ $('Apply Routing Logic').item.json.stronger_alternative }}\"\n}"
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1570, 400]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[ { "node": "Validate Input", "type": "main", "index": 0 } ]] },
+    "Validate Input": { "main": [[ { "node": "TypeSafe Jev Request", "type": "main", "index": 0 } ]] },
+    "TypeSafe Jev Request": { "main": [[ { "node": "Fetch Routing Rule", "type": "main", "index": 0 }, { "node": "Fetch User Settings", "type": "main", "index": 0 } ]] },
+    "Fetch Routing Rule": { "main": [[ { "node": "Apply Routing Logic", "type": "main", "index": 0 } ]] },
+    "Fetch User Settings": { "main": [[ { "node": "Apply Routing Logic", "type": "main", "index": 0 } ]] },
+    "Apply Routing Logic": { "main": [[ { "node": "Log to Supabase", "type": "main", "index": 0 } ]] },
+    "Log to Supabase": { "main": [[ { "node": "Respond to Webhook", "type": "main", "index": 0 } ]] }
+  }
+}
