@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import ModelMenu from '@/components/ModelMenu';
 
 interface RecommendationResult {
   category: string;
@@ -78,6 +79,7 @@ export default function HomePage() {
           <div><span className="block text-sm font-medium text-gray-500">Reasoning</span><p className="text-sm text-gray-700 mt-1">{result.reason}</p></div>
         </div>
       )}
+      <ModelMenu />
     </div>
   );
 }

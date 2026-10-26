@@ -3,7 +3,7 @@
 Recommends the most suitable AI model for a question. Flow: Next.js app -> `/api/recommend` -> n8n webhook -> TypeSafe Jev (classifies category, difficulty, high-stakes risk) -> routing rules -> recommendation.
 
 ## Setup
-1. **Supabase:** run `supabase/migrations/20260305000000_initial_schema.sql`, then fill `routing_rules` (see `supabase/seed_routing_rules.template.sql`; replace the MODEL_* placeholders).
+1. **Supabase:** run `supabase/migrations/20260305000000_initial_schema.sql`, then then run `supabase/seed_routing_rules.sql` (starter rules from the four tiers; edit model names any time).
 2. **n8n:** import `n8n/workflow.json`. Create two credentials, both "Header Auth":
    - Webhook credential: name `X-Webhook-Secret`, value = your chosen secret (same value as `N8N_WEBHOOK_SECRET`). Attach it to the Webhook node.
    - TypeSafe credential: name `Authorization`, value `Bearer <your TypeSafe key>`. Attach it to the "TypeSafe Jev Request" node.
